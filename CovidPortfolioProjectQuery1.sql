@@ -1,151 +1,84 @@
---Calculates the percentage of total_deaths out of total_cases
-
---SELECT
---location, date, total_cases, total_deaths, (total_deaths/CAST(total_cases as float))*100 as 'MortalityRate'
---FROM
---CovidDeaths
---ORDER BY
---location, date
-
---Calculates the percentage of the total_cases out of population
-
---SELECT
---location, MAX(CAST(total_cases as int)) as HighestInfectionCount, population, MAX((total_cases/population)*100) as HighestInfectionRate
---FROM
---CovidDeaths
---WHERE 
---continent is not null
---GROUP BY
---location, population
---ORDER BY
---HighestInfectionRate desc
-
---SELECT
---continent, location, MAX(CAST(total_cases as int)) as HighestInfectionCount, population
---FROM
---CovidDeaths
---WHERE
---continent = 'north america'
---GROUP BY
---continent, location, population 
---ORDER BY
---population desc
-
--- Returns the total_cases as a percentage of the population for regions and income levels
-
---SELECT
---continent, location, population, MAX(CAST(total_cases as int)) as MaxTotalCases, MAX((CAST(total_cases as int)/population)*100) as InfectionRate
---FROM
---CovidDeaths
---WHERE
---continent is null
---GROUP BY
---continent, location, population
---ORDER BY
---InfectionRate desc
-
-
---Returns Global total_cases by date
-
---SELECT
---date,SUM(CAST(total_cases as bigint)) as GlobalTotalCases, SUM(population) as GlobalPopulation, (SUM(CAST(total_cases as bigint))/SUM(population))*100 as GlobalInfectionRate
---FROM
---CovidDeaths
---WHERE
---continent is not null
---GROUP BY
---date
---ORDER BY
---date
-
-
---Shows the rolling total of vaccinations in each country
-
---SELECT
---dea.continent, dea.location, dea.date, dea.population, test.new_vaccinations as NewVaccinations, SUM(CAST(test.new_vaccinations as bigint)) OVER (PARTITION BY dea.location ORDER BY dea.date) as RollingPeopleVaccinated
---FROM
---CovidDeaths dea
---join
---CovidTests test 
---on 
---dea.location = test.location
---and
---dea.date = test.date
---WHERE
---dea.continent is not null
---GROUP BY
---dea.continent, dea.location, dea.date, dea.population, test.new_vaccinations
---ORDER BY
---dea.location, dea.date
-
-
-
-
---WITH PopvsTest (Continent, Location, Date, Population, New_Vaccinations, RollingPeopleVaccinated,people_vaccinated)
---as
---(
---SELECT
---dea.continent, dea.location, dea.date, dea.population, test.new_vaccinations as NewVaccinations, SUM(CAST(test.new_vaccinations as bigint)) OVER (PARTITION BY dea.location ORDER BY dea.date) as RollingPeopleVaccinated, people_vaccinated
---FROM
---CovidDeaths dea
---join
---CovidTests test 
---on 
---dea.location = test.location
---and
---dea.date = test.date
---WHERE
---dea.continent is not null
---GROUP BY
---dea.continent, dea.location, dea.date, dea.population, test.new_vaccinations, people_vaccinated
---)
---SELECT
---*, (RollingPeopleVaccinated/Population)*100 as RollingPercentVaccinated
---FROM
---PopvsTest
---WHERE
---Location = 'united states' and people_vaccinated is not null
---ORDER BY
---Location, Date
-
-
---Creates a temp table
-
---DROP TABLE if exists #PercentPopulationVaccinated
---CREATE TABLE #PercentPopulationVaccinated
---(
---Continent nvarchar(255),
---Location nvarchar(255),
---Date date,
---Population bigint,
---New_vaccinations bigint,
---RollingPeopleVaccinated bigint,
---)
---INSERT INTO #PercentPopulationVaccinated
---SELECT
---dea.continent, dea.location, dea.date, dea.population, test.new_vaccinations as NewVaccinations, SUM(CAST(test.new_vaccinations as bigint)) OVER (PARTITION BY dea.location ORDER BY dea.date) as RollingPeopleVaccinated
---FROM
---CovidPortfolioProject..CovidDeaths dea
---join
---CovidPortfolioProject..CovidTests test 
---on 
---dea.location = test.location
---and
---dea.date = test.date
---WHERE
---dea.continent is not null
---GROUP BY
---dea.continent, dea.location, dea.date, dea.population, test.new_vaccinations
-
-
---Creating a view for visulaization
+--Creates a view showing the mortality rate by country
 
 USE CovidPortfolioProject
 GO
-
-CREATE VIEW PercentPopulationVaccinated as 
+CREATE VIEW MortalityRate as
 SELECT
-dea.continent, dea.location, dea.date, dea.population, test.new_vaccinations as NewVaccinations, SUM(CAST(test.new_vaccinations as bigint)) OVER (PARTITION BY dea.location ORDER BY dea.date) as RollingPeopleVaccinated
+Location, CAST(date as date) as Date, total_cases as TotalCases, total_deaths as TotalDeaths, (total_deaths/CAST(total_cases as float))*100 as MortalityRate
+FROM
+CovidDeaths
+
+--Creates a view showing the infection rate by country
+
+USE CovidPortfolioProject
+GO
+CREATE VIEW InfectionRate as 
+WITH InfRate (Continent, location, Population, HighestInfectionCount)
+as
+(
+SELECT
+Continent, Location, Population, MAX(CAST(total_cases as int)) as HighestInfectionCount
+FROM
+CovidPortfolioProject..CovidDeaths dea
+WHERE 
+continent is not null
+GROUP BY
+continent, location, population
+)
+SELECT
+*,(HighestInfectionCount/Population)*100 as HighestInfectionRate
+FROM
+InfRate
+WHERE
+HighestInfectionCount is not null
+
+
+--Creates a view showing the infection rate by region or income level
+
+USE CovidPortfolioProject
+GO
+CREATE VIEW InfectionRatebyClassification as
+SELECT
+continent, location, population, MAX(CAST(total_cases as int)) as MaxTotalCases, MAX((CAST(total_cases as int)/population)*100) as InfectionRate
+FROM
+CovidDeaths
+WHERE
+continent is null
+GROUP BY
+continent, location, population
+
+
+--Returns the global infection rates ordered by date
+
+SELECT
+date, SUM(population) as GlobalPopulation, SUM(CAST(total_cases as bigint)) as GlobalTotalCases, (SUM(CAST(total_cases as bigint))/SUM(population))*100 as GlobalInfectionRate
+FROM
+CovidDeaths
+WHERE
+continent is not null
+GROUP BY
+date
+ORDER BY
+date
+
+
+/*Creates a temp table of the rolling vaccination count by country
+This is a flawed metric because new_vaccinations includes things beyond the first shot leading to rolling counts that exceed population*/
+
+DROP TABLE if exists #VaccinationRate
+CREATE TABLE #VaccinationRate
+(
+Continent nvarchar(255),
+Location nvarchar(255),
+Date date,
+Population bigint,
+New_vaccinations bigint,
+RollingPeopleVaccinated bigint,
+)
+INSERT INTO #VaccinationRate
+SELECT
+dea.continent, dea.location, dea.date, dea.population, test.new_vaccinations as NewVaccinations,
+SUM(CAST(test.new_vaccinations as bigint)) OVER (PARTITION BY dea.location ORDER BY dea.date) as RollingPeopleVaccinated
 FROM
 CovidPortfolioProject..CovidDeaths dea
 join
@@ -159,7 +92,26 @@ dea.continent is not null
 GROUP BY
 dea.continent, dea.location, dea.date, dea.population, test.new_vaccinations
 
+
+/*Creates a view of the vaccination rate by country by date
+This uses the more reliable people_vaccinated to resolve issues of inaccuarate rolling counts*/
+
+USE CovidPortfolioProject
+GO
+CREATE VIEW VaccinationRate as
 SELECT
-*
+dea.continent, dea.location, dea.date, dea.population, test.people_vaccinated, (CAST(test.people_vaccinated as bigint)/dea.population)*100 as VaccinationRate
 FROM
-PercentPopulationVaccinated
+CovidPortfolioProject..CovidDeaths dea
+join
+CovidPortfolioProject..CovidTests test 
+on 
+dea.location = test.location
+and
+dea.date = test.date
+WHERE
+dea.continent is not null
+GROUP BY
+dea.continent, dea.location, dea.date, dea.population,test.people_vaccinated
+--ORDER BY
+--location, date
